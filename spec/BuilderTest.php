@@ -3,9 +3,8 @@
 
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Query\Processors\MySqlProcessor;
-use Sofa\Hookable\ArgumentBag;
-use Sofa\Hookable\Builder;
 use PHPUnit\Framework\TestCase;
+use Sofa\Hookable\Builder;
 
 class BuilderTest extends TestCase {
     protected function setUp(): void {
@@ -18,7 +17,8 @@ class BuilderTest extends TestCase {
     }
     
     public function testFallbackToBaseColumnsForPrefixedColumns() {
-        self::assertEquals('query', $this->sofaBuilder->where('prefixed.column', 'value'));
+        $this->sofaBuilder->where('prefixed.column', 'value');
+        self::assertEquals(1, $this->sofaBuilder->callParentCount);
     }
     
     public function testCallsHookDefinedOnModel() {
@@ -31,15 +31,18 @@ class BuilderTest extends TestCase {
 }
 
 class DumbSofaBuilder extends Builder {
+    public $callParentCount = 0;
+    
     public function __construct(\Illuminate\Database\Query\Builder $query) {
         parent::__construct($query);
     }
     
     public function callParent($method, array $args) {
-        return 'query';
+        $this->callParentCount++;
+        return parent::callParent($method, $args);
     }
     
-    public function setMockedModel(DumbModel $model){
+    public function setMockedModel(DumbModel $model) {
         $this->dumbModel = $model;
     }
     
@@ -48,10 +51,10 @@ class DumbSofaBuilder extends Builder {
     }
 }
 
-class DumbModel{
+class DumbModel extends \Illuminate\Database\Eloquent\Model {
     public $queryHookCount = 0;
     
-    public function queryHook(){
+    public function queryHook() {
         $this->queryHookCount++;
     }
 }
