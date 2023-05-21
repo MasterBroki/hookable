@@ -2,548 +2,115 @@
 
 namespace Sofa\Hookable;
 
-use Closure;
-use InvalidArgumentException;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * @method $this leftJoin($table, $one, $operator, $two)
  */
-class Builder extends EloquentBuilder
-{
-    /**
-     * All of the available clause operators.
-     *
-     * @var array
-     */
-    protected $operators = [
-        '=', '<', '>', '<=', '>=', '<>', '!=', '<=>',
-        'like', 'like binary', 'not like', 'between', 'ilike',
-        '&', '|', '^', '<<', '>>',
-        'rlike', 'regexp', 'not regexp',
-        '~', '~*', '!~', '!~*', 'similar to',
-        'not similar to', 'not ilike', '~~*', '!~~*',
-    ];
-
-    /**
-     * The methods that should be returned from query builder.
-     *
-     * @var array
-     */
-    protected $passthru = [
-        'toSql', 'lists', 'insert', 'insertGetId', 'pluck', 'value', 'count', 'raw', 'min', 'max',
-        'avg', 'sum', 'exists', 'doesntExist', 'getBindings', 'aggregate', 'getConnection'
-    ];
-
+class Builder extends EloquentBuilder {
+    
     /*
     |--------------------------------------------------------------------------
     | Hooks handling
     |--------------------------------------------------------------------------
     */
-
-    /**
-     * Call base Eloquent method.
-     *
-     * @param  string $method
-     * @param  array  $args
-     * @return mixed
-     */
-    public function callParent($method, array $args)
-    {
-        return call_user_func_array("parent::{$method}", $args);
+    
+    public function select($columns = ['*']) {
+        return $this->callHookOrParent(__FUNCTION__, $columns);
     }
-
+    
     /**
      * Call custom handlers for where call.
      *
-     * @param  string $method
-     * @param  \Sofa\Hookable\ArgumentBag $args
+     * @param string $method
+     * @param array $arguments
      * @return mixed
      */
-    protected function callHook($method, ArgumentBag $args)
-    {
-        if ($this->hasHook($args->get('column')) || in_array($method, ['select', 'addSelect'])) {
-            return $this->getModel()->queryHook($this, $method, $args);
-        }
-
-        return $this->callParent($method, $args->all());
+    protected function callHookOrParent($method, ...$arguments) {
+        $model = $this->getModel();
+        if ($model->hookExists($method))
+            return $model->callHook($method, $arguments);
+        
+        return $this->callParent($method, $arguments);
     }
-
+    
     /**
-     * Determine whether where call might have custom handler.
-     *
-     * @param  string  $column
-     * @return boolean
+     * @return Model|Hookable|Builder
      */
-    protected function hasHook($column)
-    {
-        // If developer provided column prefixed with table name we will
-        // not even try to map the column, since obviously the value
-        // refers to the actual column name on the queried table.
-        return is_string($column) && strpos($column, '.') === false;
+    public function getModel() {
+        return $this->model;
     }
-
-    /**
-     * Pack arguments in ArgumentBag instance.
-     *
-     * @param  array  $args
-     * @return \Sofa\Hookable\ArgumentBag
-     */
-    protected function packArgs(array $args)
-    {
-        return new ArgumentBag($args);
-    }
-
+    
     /*
     |--------------------------------------------------------------------------
     | Query builder overrides
     |--------------------------------------------------------------------------
     */
-
+    
     /**
-     * Set the columns to be selected.
+     * Call base Eloquent method.
      *
-     * @param  array  $columns
-     * @return $this
-     */
-    public function select($columns = ['*'])
-    {
-        $columns = is_array($columns) ? $columns : func_get_args();
-
-        return $this->callHook(__FUNCTION__, $this->packArgs(compact('columns')));
-    }
-
-    /**
-     * Add where constraint to the query.
-     *
-     * @param  mixed  $column
-     * @param  string $operator
-     * @param  mixed  $value
-     * @param  string $boolean
-     * @return $this
-     */
-    public function where($column, $operator = null, $value = null, $boolean = 'and')
-    {
-        if (!in_array(strtolower($operator), $this->operators, true)) {
-            list($value, $operator) = [$operator, '='];
-        }
-
-        $bag = $this->packArgs(compact('column', 'operator', 'value', 'boolean'));
-
-        return $this->callHook(__FUNCTION__, $bag);
-    }
-
-    /**
-     * Add an "or where" clause to the query.
-     *
-     * @param  string  $column
-     * @param  string  $operator
-     * @param  mixed   $value
-     * @return $this
-     */
-    public function orWhere($column, $operator = null, $value = null)
-    {
-        return $this->where($column, $operator, $value, 'or');
-    }
-
-    /**
-     * Add a where between statement to the query.
-     *
-     * @param  string  $column
-     * @param  array   $values
-     * @param  string  $boolean
-     * @param  boolean $not
-     * @return $this
-     *
-     * @throws \InvalidArgumentException
-     */
-    public function whereBetween($column, array $values, $boolean = 'and', $not = false)
-    {
-        if (($count = count($values)) != 2) {
-            throw new InvalidArgumentException(
-                "Between clause requires exactly 2 values, {$count} given."
-            );
-        }
-
-        return $this->callHook(__FUNCTION__, $this->packArgs(compact('column', 'values', 'boolean', 'not')));
-    }
-
-    /**
-     * Add an or where between statement to the query.
-     *
-     * @param  string  $column
-     * @param  array   $values
-     * @return $this
-     */
-    public function orWhereBetween($column, array $values)
-    {
-        return $this->whereBetween($column, $values, 'or');
-    }
-
-    /**
-     * Add a where not between statement to the query.
-     *
-     * @param  string  $column
-     * @param  array   $values
-     * @param  string  $boolean
-     * @return $this
-     */
-    public function whereNotBetween($column, array $values, $boolean = 'and')
-    {
-        return $this->whereBetween($column, $values, $boolean, true);
-    }
-
-    /**
-     * Add an or where not between statement to the query.
-     *
-     * @param  string  $column
-     * @param  array   $values
-     * @return $this
-     */
-    public function orWhereNotBetween($column, array $values)
-    {
-        return $this->whereNotBetween($column, $values, 'or');
-    }
-
-    /**
-     * Add a "where in" clause to the query.
-     *
-     * @param  string  $column
-     * @param  mixed   $values
-     * @param  string  $boolean
-     * @param  bool    $not
-     * @return $this
-     */
-    public function whereIn($column, $values, $boolean = 'and', $not = false)
-    {
-        return $this->callHook(__FUNCTION__, $this->packArgs(compact('column', 'values', 'boolean', 'not')));
-    }
-
-    /**
-     * Add an "or where in" clause to the query.
-     *
-     * @param  string  $column
-     * @param  mixed   $values
-     * @return $this
-     */
-    public function orWhereIn($column, $values)
-    {
-        return $this->whereIn($column, $values, 'or');
-    }
-
-    /**
-     * Add a "where not in" clause to the query.
-     *
-     * @param  string  $column
-     * @param  mixed   $values
-     * @param  string  $boolean
-     * @return $this
-     */
-    public function whereNotIn($column, $values, $boolean = 'and')
-    {
-        return $this->whereIn($column, $values, $boolean, true);
-    }
-
-    /**
-     * Add an "or where not in" clause to the query.
-     *
-     * @param  string  $column
-     * @param  mixed   $values
-     * @return $this
-     */
-    public function orWhereNotIn($column, $values)
-    {
-        return $this->whereNotIn($column, $values, 'or');
-    }
-
-    /**
-     * Add a "where null" clause to the query.
-     *
-     * @param  string  $column
-     * @param  string  $boolean
-     * @param  bool    $not
-     * @return $this
-     */
-    public function whereNull($column, $boolean = 'and', $not = false)
-    {
-        return $this->callHook(__FUNCTION__, $this->packArgs(compact('column', 'boolean', 'not')));
-    }
-
-    /**
-     * Add an "or where null" clause to the query.
-     *
-     * @param  string  $column
-     * @return $this
-     */
-    public function orWhereNull($column)
-    {
-        return $this->whereNull($column, 'or');
-    }
-
-    /**
-     * Add a "where not null" clause to the query.
-     *
-     * @param  string  $column
-     * @param  string  $boolean
-     * @return $this
-     */
-    public function whereNotNull($column, $boolean = 'and')
-    {
-        return $this->whereNull($column, $boolean, true);
-    }
-
-    /**
-     * Add an "or where not null" clause to the query.
-     *
-     * @param  string  $column
-     * @return $this
-     */
-    public function orWhereNotNull($column)
-    {
-        return $this->whereNotNull($column, 'or');
-    }
-
-    /**
-     * Add a date based (year, month, day) statement to the query.
-     *
-     * @param  string  $type
-     * @param  string  $column
-     * @param  string  $operator
-     * @param  int     $value
-     * @param  string  $boolean
-     * @return $this
-     */
-    protected function addDateBasedWhere($type, $column, $operator, $value, $boolean = 'and')
-    {
-        return $this->callHook("where{$type}", $this->packArgs(compact('column', 'operator', 'value', 'boolean')));
-    }
-
-    /**
-     * Add a "where date" statement to the query.
-     *
-     * @param  string  $column
-     * @param  string   $operator
-     * @param  int   $value
-     * @param  string   $boolean
-     * @return $this
-     */
-    public function whereDate($column, $operator, $value, $boolean = 'and')
-    {
-        return $this->addDateBasedWhere('Date', $column, $operator, $value, $boolean);
-    }
-
-    /**
-     * Add a "where day" statement to the query.
-     *
-     * @param  string  $column
-     * @param  string   $operator
-     * @param  int   $value
-     * @param  string   $boolean
-     * @return $this
-     */
-    public function whereDay($column, $operator, $value, $boolean = 'and')
-    {
-        return $this->addDateBasedWhere('Day', $column, $operator, $value, $boolean);
-    }
-
-    /**
-     * Add a "where month" statement to the query.
-     *
-     * @param  string  $column
-     * @param  string   $operator
-     * @param  int   $value
-     * @param  string   $boolean
-     * @return $this
-     */
-    public function whereMonth($column, $operator, $value, $boolean = 'and')
-    {
-        return $this->addDateBasedWhere('Month', $column, $operator, $value, $boolean);
-    }
-
-    /**
-     * Add a "where year" statement to the query.
-     *
-     * @param  string  $column
-     * @param  string   $operator
-     * @param  int   $value
-     * @param  string   $boolean
-     * @return $this
-     */
-    public function whereYear($column, $operator, $value, $boolean = 'and')
-    {
-        return $this->addDateBasedWhere('Year', $column, $operator, $value, $boolean);
-    }
-
-    /**
-     * Add an exists clause to the query.
-     *
-     * @param  \Closure $callback
-     * @param  string   $boolean
-     * @param  bool     $not
-     * @return $this
-     */
-    public function whereExists(Closure $callback, $boolean = 'and', $not = false)
-    {
-        $type = $not ? 'NotExists' : 'Exists';
-
-        $builder = $this->newQuery();
-
-        call_user_func($callback, $builder);
-
-        $query = $builder->getQuery();
-
-        $this->query->wheres[] = compact('type', 'query', 'boolean');
-
-        $this->query->mergeBindings($query);
-
-        return $this;
-    }
-
-    /**
-     * Add an "order by" clause to the query.
-     *
-     * @param  string  $column
-     * @param  string  $direction
-     * @return $this
-     */
-    public function orderBy($column, $direction = 'asc')
-    {
-        return $this->callHook(__FUNCTION__, $this->packArgs(compact('column', 'direction')));
-    }
-
-    /**
-     * Add an "order by" clause for a timestamp to the query.
-     *
-     * @param  string  $column
-     * @return $this
-     */
-    public function latest($column = 'created_at')
-    {
-        return $this->orderBy($column, 'desc');
-    }
-
-    /**
-     * Add an "order by" clause for a timestamp to the query.
-     *
-     * @param  string  $column
-     * @return $this
-     */
-    public function oldest($column = 'created_at')
-    {
-        return $this->orderBy($column, 'asc');
-    }
-
-    /**
-     * Get an array with the values of a given column.
-     *
-     * @param  string  $column
-     * @param  string|null  $key
-     * @return array
-     */
-    public function pluck($column, $key = null)
-    {
-        return $this->callHook(__FUNCTION__, $this->packArgs(compact('column', 'key')));
-    }
-
-    /**
-     * Get a single column's value from the first result of a query.
-     *
-     * @param  string  $column
+     * @param string $method
+     * @param array $args
      * @return mixed
      */
-    public function value($column)
-    {
-        return $this->callHook(__FUNCTION__, $this->packArgs(compact('column')));
+    public function callParent($method, array $args) {
+        return call_user_func_array("parent::{$method}", $args);
     }
-
-    /**
-     * Execute an aggregate function on the database.
-     *
-     * @param  string  $function
-     * @param  array   $columns
-     * @return mixed
-     */
-    public function aggregate($function, array $columns = ['*'])
-    {
-        $column = (reset($columns) !== '*') ? reset($columns) : null;
-
-        return $this->callHook(__FUNCTION__, $this->packArgs(compact('function', 'columns', 'column')));
+    
+    public function where($column, $operator = null, $value = null, $boolean = 'and') {
+        // If developer provided column prefixed with table name we will
+        // not even try to map the column, since obviously the value
+        // refers to the actual column name on the queried table.
+        if (str_contains($column, '.'))
+            return $this->callParent(__FUNCTION__, [$column, $operator, $value, $boolean]);
+        
+        return $this->callHookOrParent(__FUNCTION__, $column, $operator, $value, $boolean);
     }
-
-    /**
-     * Retrieve the minimum value of a given column.
-     *
-     * @param  string  $column
-     * @return mixed
-     */
-    public function min($column)
-    {
-        return $this->aggregate(__FUNCTION__, (array) $column);
+    
+    public function whereBetween($column, iterable $values, $boolean = 'and', $not = false) {
+        return $this->callHookOrParent(__FUNCTION__, $column, $values, $boolean, $not);
     }
-
-    /**
-     * Retrieve the maximum value of a given column.
-     *
-     * @param  string  $column
-     * @return mixed
-     */
-    public function max($column)
-    {
-        return $this->aggregate(__FUNCTION__, (array) $column);
+    
+    public function whereIn($column, $values, $boolean = 'and', $not = false) {
+        return $this->callHookOrParent(__FUNCTION__, $column, $values, $boolean, $not);
     }
-
-    /**
-     * Retrieve the average of the values of a given column.
-     *
-     * @param  string  $column
-     * @return mixed
-     */
-    public function avg($column)
-    {
-        return $this->aggregate(__FUNCTION__, (array) $column);
+    
+    public function whereNull($columns, $boolean = 'and', $not = false) {
+        return $this->callHookOrParent(__FUNCTION__, $columns, $boolean, $not);
     }
-
-    /**
-     * Retrieve the sum of the values of a given column.
-     *
-     * @param  string  $column
-     * @return mixed
-     */
-    public function sum($column)
-    {
-        return $this->aggregate(__FUNCTION__, (array) $column);
+    
+    public function orderBy($column, $direction = 'asc') {
+        return $this->callHookOrParent(__FUNCTION__, $column, $direction);
     }
-
-    /**
-     * Retrieve the "count" result of the query.
-     *
-     * @param  string  $columns
-     * @return int
-     */
-    public function count($columns = '*')
-    {
-        return $this->aggregate(__FUNCTION__, (array) $columns);
+    
+    public function pluck($column, $key = null) {
+        return $this->callHookOrParent(__FUNCTION__, $column, $key);
     }
-
-    /**
-     * Get an array with the values of a given column.
-     *
-     * @param  string  $column
-     * @param  string  $key
-     * @return array
-     */
-    public function lists($column, $key = null)
-    {
-        return $this->pluck($column, $key);
+    
+    public function value($column) {
+        return $this->callHookOrParent(__FUNCTION__, $column);
     }
-
+    
+    public function aggregate($function, $columns = ['*']) {
+        return $this->callHookOrParent(__FUNCTION__, $function, $columns);
+    }
+    
     /**
      * Get a new instance of the Hookable query builder.
      *
-     * @return \Sofa\Hookable\Builder
+     * @return Builder
      */
-    public function newQuery()
-    {
+    public function newQuery() {
         return $this->model->newQueryWithoutScopes();
+    }
+    
+    protected function addDateBasedWhere($type, $column, $operator, $value, $boolean = 'and') {
+        return $this->callHookOrParent("where{$type}",
+            $column,
+            $operator,
+            $value,
+            $boolean);
     }
 }

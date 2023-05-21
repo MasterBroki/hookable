@@ -1,60 +1,79 @@
 <?php
 
 
-use Illuminate\Database\ConnectionInterface;
-use Illuminate\Database\Query\Processors\MySqlProcessor;
+use Illuminate\Database\Connection;
+use Illuminate\Database\ConnectionResolver;
+use Illuminate\Database\Eloquent\Model;
 use PHPUnit\Framework\TestCase;
 use Sofa\Hookable\Builder;
 
 class BuilderTest extends TestCase {
-    protected function setUp(): void {
-        $grammar = new Illuminate\Database\Query\Grammars\MySqlGrammar();
-        $postProcessor = new MySqlProcessor();
-        $query = new Illuminate\Database\Query\Builder($this->getMockBuilder(ConnectionInterface::class)
-            ->setMockClassName('DumbConnection')
-            ->getMock(), $grammar, $postProcessor);
-        $this->sofaBuilder = new DumbSofaBuilder($query);
-    }
     
     public function testFallbackToBaseColumnsForPrefixedColumns() {
-        $this->sofaBuilder->where('prefixed.column', 'value');
+        $dumbModel = $this->getModel();
+        $dumbModel->where('prefixed.column', 'value');
         self::assertEquals(1, $this->sofaBuilder->callParentCount);
     }
     
     public function testCallsHookDefinedOnModel() {
-        $dumbModel = new DumbModel();
-        $this->sofaBuilder->setMockedModel($dumbModel);
-        $this->sofaBuilder->select(['column', 'value']);
-        self::assertEquals(1, $dumbModel->queryHookCount);
+        $dumbModel = $this->getModel();
+        DumbModel::hook('select', function ($columns) {
+            return 'test';
+        });
+        $dumbModel->select(['column', 'value']);
+        self::assertEquals(1, $dumbModel->queryHookCount, implode(', ', $dumbModel->calledHooks));
         
+    }
+    
+    public function getModel($driver = 'MySql') {
+        $model = new DumbModel();
+        $grammarClass = "Illuminate\Database\Query\Grammars\\{$driver}Grammar";
+        $processorClass = "Illuminate\Database\Query\Processors\\{$driver}Processor";
+        $grammar = new $grammarClass;
+        $processor = new $processorClass;
+        
+        $schema = Mockery::mock('StdClass');
+        $schema->shouldReceive('getColumnListing')->andReturn(['id', 'first_name', 'last_name']);
+        
+        $connection = Mockery::mock(Connection::class)->makePartial();
+        $connection->shouldReceive('getQueryGrammar')->andReturn($grammar);
+        $connection->shouldReceive('getPostProcessor')->andReturn($processor);
+        $connection->shouldReceive('getSchemaBuilder')->andReturn($schema);
+        $connection->shouldReceive('getName')->andReturn($driver);
+        
+        $query = new Illuminate\Database\Query\Builder($connection, $grammar, $processor);
+        $this->sofaBuilder = new DumbSofaBuilder($query);
+        DumbModel::hook('newEloquentBuilder', function () {
+            return $this->sofaBuilder;
+        });
+        
+        $resolver = Mockery::mock(ConnectionResolver::class)->makePartial();
+        $resolver->shouldReceive('connection')->andReturn($connection);
+        /** @var Model|string $class */
+        DumbModel::setConnectionResolver($resolver);
+        return $model;
     }
 }
 
 class DumbSofaBuilder extends Builder {
     public $callParentCount = 0;
     
-    public function __construct(\Illuminate\Database\Query\Builder $query) {
-        parent::__construct($query);
-    }
-    
     public function callParent($method, array $args) {
         $this->callParentCount++;
         return parent::callParent($method, $args);
     }
-    
-    public function setMockedModel(DumbModel $model) {
-        $this->dumbModel = $model;
-    }
-    
-    public function getModel() {
-        return $this->dumbModel;
-    }
 }
 
 class DumbModel extends \Illuminate\Database\Eloquent\Model {
-    public $queryHookCount = 0;
+    use \Sofa\Hookable\Hookable;
     
-    public function queryHook() {
+    public $queryHookCount = 0;
+    public $calledHooks = [];
+    
+    public function onHookCalled($name, $arguments) {
+        if ($name == "newEloquentBuilder")
+            return;
         $this->queryHookCount++;
+        $this->calledHooks[] = $name;
     }
 }

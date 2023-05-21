@@ -8,13 +8,15 @@ use Closure;
  * This trait is an entry point for all the hooks that we want to apply
  * on the Eloquent Model and Builder in order to let the magic happen.
  *
- * @version 1.0
+ * @version 2.0
  */
 trait Hookable {
-    /**
-     * @var Closure[]
-     */
-    protected static $hooks = [];
+    
+    /*
+    |--------------------------------------------------------------------------
+    | Hooks handling
+    |--------------------------------------------------------------------------
+    */
     
     /**
      * Register hook on Eloquent method.
@@ -24,16 +26,7 @@ trait Hookable {
      * @return void
      */
     public static function hook($method, Closure $hook) {
-        static::$hooks[$method][] = $hook;
-    }
-    
-    /**
-     * Remove all of the hooks on the Eloquent model.
-     *
-     * @return void
-     */
-    public static function flushHooks() {
-        static::$hooks = [];
+        HookableStorage::setHook(get_class(), $method, $hook);
     }
     
     /**
@@ -43,214 +36,102 @@ trait Hookable {
      * @return Builder
      */
     public function newEloquentBuilder($query) {
+        if ($this->hookExists(__FUNCTION__))
+            return $this->callHook(__FUNCTION__, $query);
         return new Builder($query);
     }
     
-    /**
-     * Allow custom where method calls on the builder.
-     *
-     * @param Builder $query
-     * @param string $method
-     * @param ArgumentBag $args
-     * @return Builder
-     */
-    public function queryHook(Builder $query, $method, ArgumentBag $args) {
-        $hooks = $this->boundHooks(__FUNCTION__);
-        $params = compact('method', 'args');
-        $payload = $query;
-        $destination = function ($query) use ($method, $args) {
-            return call_user_func_array([$query, 'callParent'], [$method, $args->all()]);
-        };
+    public static function getHooks() {
+        $class = get_class();
+        $hooks = HookableStorage::getAllHooks();
+        return $hooks[$class] ?? [];
+    }
+    
+    public function callHook($method, ...$arguments) {
+        $hooks = HookableStorage::getAllHooks()[get_class()];
+        if ($method == "where" && count(explode('.', $arguments[1])) > 1) {
+            return $this->model->$method(... $arguments);
+        }
         
-        return $this->pipe($hooks, $payload, $params, $destination);
+        $callBack = $hooks[$method];
+        $this->onHookCalled($method, $arguments);
+        return call_user_func_array($callBack, $arguments);
+    }
+    
+    public function hookExists($method) {
+        return HookableStorage::hasHooks(get_class(), $method);
+    }
+    
+    protected function onHookCalled($name, $arguments) {
+    
+    }
+    
+    /**
+     * Remove all of the hooks on the Eloquent model.
+     *
+     * @return void
+     */
+    public static function flushHooks() {
+        HookableStorage::flushHooksForClass(get_class());
     }
     
     /*
     |--------------------------------------------------------------------------
-    | Register hooks
+    | Hook decorators
     |--------------------------------------------------------------------------
     */
-    
-    /**
-     * Get all hooks for given method bound to $this instance.
-     *
-     * @param string $method
-     * @return Closure[]
-     */
-    protected function boundHooks($method) {
-        $allHooks = Hookable::getHooks();
-        $hooks = $allHooks[$method] ?? [];
-        
-        return array_map(function ($hook) {
-            return $hook->bindTo($this, get_class($this));
-        }, $hooks);
-    }
-    
-    public static function getHooks() {
-        return self::$hooks;
-    }
-    
-    /**
-     * Send payload through the pipeline.
-     *
-     * @param Closure[] $pipes
-     * @param mixed $payload
-     * @param array $params
-     * @param Closure $destination
-     * @return mixed
-     */
-    protected function pipe($pipes, $payload, $params, $destination) {
-        return (new Pipeline($pipes))
-            ->send($payload)
-            ->with(new ArgumentBag($params))
-            ->to($destination);
-    }
-    
-    /**
-     * Register hook for getAttribute.
-     *
-     * @param string $key
-     * @return mixed
-     * @return mixed
-     */
     public function getAttribute($key) {
-        $hooks = $this->boundHooks(__FUNCTION__);
-        $params = compact('key');
-        $payload = parent::getAttribute($key);
-        $destination = function ($attribute) {
-            return $attribute;
-        };
-        
-        return $this->pipe($hooks, $payload, $params, $destination);
+        $attributeName = "get" . $this->camelize($key) . "Attribute";
+        if ($this->hookExists($attributeName))
+            return $this->callHook($attributeName);
+        if ($this->hookExists(__FUNCTION__))
+            return $this->callHook(__FUNCTION__, $key);
+        return parent::getAttribute($key);
     }
     
-    /**
-     * Register hook for setAttribute.
-     *
-     * @param string $key
-     * @param mixed $value
-     * @return mixed
-     */
+    private function camelize($input, $separator = '_') {
+        return str_replace($separator, '', ucwords($input, $separator));
+    }
+    
     public function setAttribute($key, $value) {
-        $hooks = array_reverse($this->boundHooks(__FUNCTION__));
-        $params = compact('key');
-        $payload = $value;
-        $destination = function ($value) use ($key) {
-            parent::setAttribute($key, $value);
-        };
-        
-        $this->pipe($hooks, $payload, $params, $destination);
-        
-        return $this;
+        if ($this->hookExists("set" . $key . "Attribute"))
+            return $this->callHook("set" . $key . "Attribute", $value);
+        return parent::setAttribute($key, $value);
     }
     
-    /**
-     * Register hook for save.
-     *
-     * @param array $options
-     * @return boolean
-     */
     public function save(array $options = []) {
-        if (!($saved = parent::save($options)) && $this->isDirty()) {
-            return false;
-        }
-        
-        $hooks = $this->boundHooks(__FUNCTION__);
-        $params = compact('options');
-        $payload = true;
-        $destination = function () use ($saved) {
-            return $saved;
-        };
-        
-        return $this->pipe($hooks, $payload, $params, $destination);
+        if ($this->hookExists(__FUNCTION__))
+            return $this->callHook(__FUNCTION__, $options);
+        return parent::save($options);
     }
     
-    /**
-     * Register hook for isDirty.
-     *
-     * @param null $attributes
-     * @return bool
-     */
     public function isDirty($attributes = null) {
-        if (!is_array($attributes)) {
-            $attributes = func_get_args();
-        }
-        
-        $hooks = $this->boundHooks(__FUNCTION__);
-        $params = compact('attributes');
-        $payload = $attributes;
-        $destination = function ($attributes) {
-            return parent::isDirty($attributes);
-        };
-        
-        return $this->pipe($hooks, $payload, $params, $destination);
+        if ($this->hookExists(__FUNCTION__))
+            return $this->callHook(__FUNCTION__, $attributes);
+        return parent::isDirty($attributes);
     }
     
-    /**
-     * Register hook for toArray.
-     *
-     * @return mixed
-     */
     public function toArray() {
-        $hooks = $this->boundHooks(__FUNCTION__);
-        $params = [];
-        $payload = parent::toArray();
-        $destination = function ($array) {
-            return $array;
-        };
-        
-        return $this->pipe($hooks, $payload, $params, $destination);
+        if ($this->hookExists(__FUNCTION__))
+            return $this->callHook(__FUNCTION__);
+        return parent::toArray();
     }
     
-    /**
-     * Register hook for replicate.
-     *
-     * @param array|null $except
-     *
-     * @return mixed
-     */
     public function replicate(array $except = null) {
-        $hooks = $this->boundHooks(__FUNCTION__);
-        $params = ['except' => $except, 'original' => $this];
-        $payload = parent::replicate($except);
-        $destination = function ($copy) {
-            return $copy;
-        };
-        
-        return $this->pipe($hooks, $payload, $params, $destination);
+        if ($this->hookExists(__FUNCTION__))
+            return $this->callHook(__FUNCTION__, $except);
+        return parent::replicate($except);
     }
     
-    /**
-     * Register hook for isset call.
-     *
-     * @param string $key
-     * @return boolean
-     */
     public function __isset($key) {
-        $hooks = $this->boundHooks(__FUNCTION__);
-        $params = compact('key');
-        $payload = parent::__isset($key);
-        $destination = function ($isset) {
-            return $isset;
-        };
-        
-        return $this->pipe($hooks, $payload, $params, $destination);
+        if ($this->hookExists(__FUNCTION__))
+            return $this->callHook(__FUNCTION__, $key);
+        return parent::__isset($key);
     }
     
-    /**
-     * Register hook for isset call.
-     *
-     * @param string $key
-     * @return boolean
-     */
     public function __unset($key) {
-        $hooks = $this->boundHooks(__FUNCTION__);
-        $params = compact('key');
-        $payload = false;
-        $destination = function () use ($key) {
-            return call_user_func('parent::__unset', $key);
-        };
-        
-        return $this->pipe($hooks, $payload, $params, $destination);
+        if ($this->hookExists(__FUNCTION__))
+            $this->callHook(__FUNCTION__, $key);
+        parent::__unset($key);
     }
 }
