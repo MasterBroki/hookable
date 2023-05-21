@@ -105,7 +105,7 @@ trait Hookable {
         return parent::save($options);
     }
     
-    public function isDirty($attributes = null) {
+    public function isDirty($attributes = []) {
         if ($this->hookExists(__FUNCTION__))
             return $this->callHook(__FUNCTION__, $attributes);
         return parent::isDirty($attributes);
