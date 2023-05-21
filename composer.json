@@ -1,13 +1,21 @@
 {
-    "name": "sofa/hookable",
+    "name": "masterbroki/hookable",
     "description": "Laravel Eloquent hooks system.",
     "license": "MIT",
     "support": {
-        "issues": "https://github.com/jarektkaczyk/hookable/issues",
-        "source": "https://github.com/jarektkaczyk/hookable"
+        "issues": "https://github.com/MasterBroki/hookable/issues",
+        "source": "https://github.com/MasterBroki/hookable"
     },
-    "keywords": ["eloquent", "laravel"],
+    "keywords": [
+        "eloquent",
+        "laravel"
+    ],
     "authors": [
+        {
+            "name": "Charles Brocchiero",
+            "email": "charles.brocchiero@hec.ca",
+            "role": "Developer"
+        },
         {
             "name": "Jarek Tkaczyk",
             "email": "jarek@softonsofa.com",
@@ -17,7 +25,7 @@
     ],
     "require": {
         "php": "^8.0",
-        "illuminate/database": ">=5.4"
+        "illuminate/database": "^10.11"
     },
     "require-dev": {
       "phpunit/phpunit": "^10.0",
