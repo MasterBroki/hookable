@@ -56,7 +56,7 @@ class Builder extends EloquentBuilder {
      * @return mixed
      */
     public function callParent($method, array $args) {
-        return call_user_func_array("parent::{$method}", $args);
+        return call_user_func_array(EloquentBuilder::class . "::{$method}", $args);
     }
     
     public function where($column, $operator = null, $value = null, $boolean = 'and') {
