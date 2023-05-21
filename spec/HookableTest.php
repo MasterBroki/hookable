@@ -4,7 +4,6 @@
 use PHPUnit\Framework\TestCase;
 use Sofa\Hookable\Hookable;
 use Sofa\Hookable\HookableStorage;
-use Sofa\Hookable\HookDecorator;
 
 class HookableTest extends TestCase {
     public function testGetAttributeHook() {
@@ -33,20 +32,6 @@ class HookableTest extends TestCase {
         self::assertEquals('bar', $dummy->getAttribute('attribute'));
     }
     
-    public function testFlushesAllHooks() {
-        HookableStorage::flushHooks();
-        HookableDummy::hook('method1', function ($next, $value, $args) {
-        });
-        HookableDummy::hook('method2', function ($next, $value, $args) {
-        });
-        $hooks = HookableDummy::getHooks();
-        self::assertCount(2, $hooks);
-        
-        HookableStorage::flushHooks();
-        
-        self::assertCount(0, HookableDummy::getHooks());
-        
-    }
     
     public function testDifferentHooksOnDifferentClasses() {
         HookableStorage::flushHooks();
@@ -56,12 +41,12 @@ class HookableTest extends TestCase {
         });
         HookableDumbDumb::hook('method3', function ($next, $value, $args) {
         });
-        
+    
         self::assertCount(2, HookableDummy::getHooks());
         self::assertCount(1, HookableDumbDumb::getHooks());
-        
-        HookableStorage::flushHooks();
-        
+    
+        HookableDummy::flushHooks();
+    
         self::assertCount(0, HookableDummy::getHooks());
         self::assertCount(1, HookableDumbDumb::getHooks());
     }
