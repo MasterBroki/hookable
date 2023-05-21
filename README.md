@@ -2,7 +2,9 @@
 
 [![GitHub Tests Action Status](https://github.com/jarektkaczyk/hookable/workflows/Tests/badge.svg)](https://github.com/jarektkaczyk/hookable/actions?query=workflow%3Atests+branch%3Amaster) [![stable](https://poser.pugx.org/sofa/hookable/v/stable.svg)](https://packagist.org/packages/sofa/hookable) [![Downloads](https://poser.pugx.org/sofa/hookable/downloads)](https://packagist.org/packages/sofa/hookable)
 
-Hooks system for the [Eloquent ORM (Laravel 5.2)](https://laravel.com/docs/5.2/eloquent).
+This is a overhaul of the Hookable system from jarektkaczyk/hookable to support laravel 10 and make the system leaner.
+
+Hooks system for the [Eloquent ORM (Laravel 10.0)](https://laravel.com/docs/5.2/eloquent).
 
 Hooks are available for the following methods:
 
@@ -22,44 +24,34 @@ and all methods available on the `Illuminate\Database\Eloquent\Builder` class.
 Clone the repo or pull as composer dependency:
 
 ```
-composer require sofa/hookable:~5.2
+composer require masterbroki/hookable:~10.0
 ```
 
 ## Usage
 
-In order to register a hook you use static method `hook` on the model: [example](https://github.com/jarektkaczyk/eloquence/blob/5.1/src/Mappable.php#L42-L56).
-
-**Important** Due to the fact that PHP will not let you bind a `Closure` to your model's instance if it is created **in a static context** (for example model's `boot` method), you need to hack it a little bit, in that the closure is created in an object context. 
-
-For example see the above example along with the [class that encloses our closures in an instance scope](https://github.com/jarektkaczyk/eloquence/blob/5.1/src/Mappable/Hooks.php) that is being used there.
-
-Signature for the hook closure is following:
+Use the hookable trait on the model:
 
 ```php
-function (Closure $next, mixed $payload, Sofa\Hookable\Contracts\ArgumentBag $args)
+class MyModel extends \Illuminate\Database\Eloquent\Model{
+    use Sofa\Hookable\Hookable;
+}
 ```
 
-Hooks are resolved via `Sofa\Hookable\Pipeline` in the same order they were registered (except for `setAttribute` where the order is reversed), and each is called unless you return early:
+In order to register a hook, use the static method `hook` on the model:
 
 ```php
-// example hook on getAttribute method:
-function ($next, $value, $args)
-{
-    if (/* your condition */) {
-        // return early
-        return 'some value'; // or the $value
-    }
+MyModel::hook('myMethod', function($myParams){
+    return "I want to select: " . implode(', ', $myParams);
+});
+```
 
-    else if (/* other condition */) {
-        // you may want to mutate the value
-        $value = strtolower($value);
-    }
+And when the attribute is called:
+```php
+$result = MyModel::select(["first", "second"]);
 
-    // finally continue calling other hooks
-    return $next($value, $args);
-}
+// $result will equal "I want to select: first, second"
 ```
 
 ## Contribution
 
-All contributions are welcome, PRs must be **tested** and **PSR-2 compliant**.
+All contributions are welcome, PRs must be **tested**.
