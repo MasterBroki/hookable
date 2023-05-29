@@ -63,7 +63,7 @@ class Builder extends EloquentBuilder {
         // If developer provided column prefixed with table name we will
         // not even try to map the column, since obviously the value
         // refers to the actual column name on the queried table.
-        if (str_contains($column, '.'))
+        if (is_string($column) && str_contains($column, '.'))
             return $this->callParent(__FUNCTION__, [$column, $operator, $value, $boolean]);
         
         return $this->callHookOrParent(__FUNCTION__, $column, $operator, $value, $boolean);
